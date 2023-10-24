@@ -1,0 +1,27 @@
+AREA;Desc;X;Y;W;H;ANG;TIPO;COLOR
+L;Lote;1;1;50;50;0;LOTE;pink
+E01;Edificio 1;2;8;14;20;0;EDIFICIO;blue
+E02;Edificio 2;3;8;14;20;0;EDIFICIO;blue
+E03;Edificio 3;5;8;14;20;0;EDIFICIO;blue
+E04;Edificio 4;5;7;14;20;90;EDIFICIO;blue
+E05;Edificio 5;5;6;14;20;90;EDIFICIO;blue
+E06;Edificio 6;5;5;14;20;90;EDIFICIO;blue
+E07;Edificio 7;5;4;14;20;90;EDIFICIO;blue
+E08;Edificio 8;5;3;14;20;90;EDIFICIO;blue
+E09;Edificio 9;4;2;14;20;-45;EDIFICIO;blue
+E10;Edificio 10;3;1;14;20;0;EDIFICIO;blue
+E11;Edificio 11;2;1;14;20;0;EDIFICIO;blue
+E12;Edificio 12;1;1;14;20;0;EDIFICIO;blue
+E13;Edificio 13;1;2;14;20;90;EDIFICIO;blue
+E14;Edificio 14;1;3;14;20;90;EDIFICIO;blue
+E15;Edificio 15;1;4;14;20;90;EDIFICIO;blue
+E16;Edificio 16;1;5;14;20;90;EDIFICIO;blue
+E17;Edificio 17;2;6;14;20;-45;EDIFICIO;blue
+E18;Edificio 18;3;6;14;20;0;EDIFICIO;blue
+E19;Edificio 19;4;5;14;20;90;EDIFICIO;blue
+E20;Edificio 20;2;4;14;20;90;EDIFICIO;blue
+SM1;Sala Multiuso 1;3;2;5;10;45;MULTIUSO;yellow
+SM2;Sala Multiuso 2;2;4;5;10;45;MULTIUSO;yellow
+SM3;Sala Multiuso 3;3;7;5;10;-45;MULTIUSO;yellow
+AV1;Area Verde 1;3;3;14;20;45;VERDE;green
+AV2;Area Verde 2;3;5;14;20;-45;VERDE;green
