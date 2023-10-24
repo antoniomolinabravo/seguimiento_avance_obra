@@ -1,0 +1,75 @@
+Dinamica o Pivote
+GROUP_CONCAT 
+
+https://sodocumentation.net/es/mysql/topic/6491/tabla-dinamica-de-un-pivot-usando-una-declaracion-preparada
+
+https://academy.leewayweb.com/como-armar-una-tabla-pivot-con-php-y-mysql/
+
+https://www.w3resource.com/mysql/aggregate-functions-and-grouping/aggregate-functions-and-grouping-group_concat.php
+
+https://www.mysqltutorial.org/mysql-group_concat/
+http://otroblogmas.com/funcion-group_concat-de-mysql/
+SET GLOBAL group_concat_max_len=4096
+
+
+>>>>>>>>>>>>>>>>>>>>>
+select ITEM, group_concat(DISTINCT  ELEMENTO_ID)
+from AVANCE
+group by ITEM
+>>>>>>>>>>>>>>>>>
+
+select ITEM, group_concat(MONTO_AVANCE order by ELEMENTO_ID separator ';')
+from AVANCE
+group by ITEM
+
+>>>>>>>>>>>>>>
+select ITEM, group_concat(CONCAT_WS('/', ELEMENTO_ID, MONTO_AVANCE) order by ELEMENTO_ID separator ';')
+from AVANCE
+group by ITEM
+<<<<<<<<<<<<<<
+
+
+
+>>>>>>>>>>>>>>>>>>>>>>>>>
+select G.ITEM, G.TOTAL_INF, group_concat(CONCAT_WS(':', A.ELEMENTO_ID, A.MONTO_AVANCE) order by A.ELEMENTO_ID asc separator ';')
+from GANTT2 G
+, AVANCE A
+where G.ITEM = A.ITEM
+group by G.ITEM
+order by G.ITEM
+<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+FULL para TABLA DYN
+>>>>>>>>>>>>>>>>>>>>>>>>>
+select G.ITEM, G.DSC, G.TOTAL_INF, SUM(A.MONTO_AVANCE) as MONTO_AVANCE, ROUND(SUM(A.MONTO_AVANCE) /G.TOTAL_INF*100,2) as PORC_AVANCE , group_concat(CONCAT_WS(':', A.ELEMENTO_ID, A.MONTO_AVANCE) order by A.ELEMENTO_ID asc separator ';')
+from GANTT2 G
+LEFT JOIN AVANCE A
+ON G.ITEM = A.ITEM
+group by G.ITEM
+order by G.ITEM
+<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+select ITEM
+from AVANCE
+
+
+select G.ITEM, group_concat(A.ELEMENTO_ID order by A.ELEMENTO_ID asc separator ';')
+from GANTT2 G
+, AVANCE A
+where G.ITEM = A.ITEM
+
+
+
+select G.ITEM, G.TOTAL_INF, group_concat(A.MONTO_AVANCE order by A.ELEMENTO_ID asc separator ';')
+from GANTT2 G
+, AVANCE A
+where G.ITEM = A.ITEM
+order by G.ITEM
+
+
+, (select * from ELEMENTO order by ELEMENTO_ID) E
+and A.ELEMENTO_ID = E.ELEMENTO_ID

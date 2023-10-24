@@ -1,0 +1,1007 @@
+﻿procesos
+--------
+ingresar carta gantt en db
+definir edificios por tipo y ubicacion
+definir deptos por tipo y ubicacion
+definir partidas con mas detalle que carta gantt para respaldar los avances
+definir partidas por tipo de vista o obra (gruesa edificio, detalle depto, otros)
+diagramar secuencia de vista lote, edificio, piso, depto
+ingreso de registro avance partida, con fecha, porcentaje y observacion
+modelo para utilizar desde telefono
+ingresar fotos en el registro
+obtener informe %avance a una fecha dada
+vista gris (base) /color (avance)
+
+tablas
+------
+gantt por partidas /nombre/cant/valoruni/valortotal/ini/fin/dias/%part
+detalle partidas/%part de la partida y por unidad(edif/depto/otro)
+edificios/tipo/ubic/orientacion/pisos
+deptos/edif/piso/ubic/numbero /mr/tipo/minusval
+registro diario/fecha/%/obs/estado /partida/detalle/edificio/depto
+foto/registro/archivo
+infavance añomes/partida/detalle/%avan/$avan/%parti/%avanMes/$avanMes
+cierre registros del mes y calculo acumulado
+
+# Para mostrar los edificios en el plano
+select AREA, X, Y, ANG, COLOR, AVANCE
+from LOTE
+where TIPO = 'EDIFICIO'
+
+# Para mostrar el edificio elevacion segun la cantidad de pisos
+select TIPO, PISOS, AVANCE
+from EDIFICIO
+where AREA = $EDIFICIO
+
+# Para mostrar el piso como plano
+select DEPTOS, AVANCE
+from PISO
+where EDIFICIO = $EDIFICIO
+and PISO = $PISO
+
+# Para mostrar el depto como plano
+select TIPO, AVANCE
+from DEPTO
+where EDIFICIO = $EDIFICIO
+and PISO = $PISO
+and NUMERO = $NUMERO
+
+# Para desglosar items de un elemento (depto, piso, edificio, etc.)
+select G.ITEM, G.DSC
+from GANTT AS G
+WHERE G.MEDICION in ('DEPTO', 'DEPTOTIPO')
+WHERE G.MEDICION in ('DEPTO', 'DEPTOMR')
+WHERE G.MEDICION in ('DEPTO', 'DEPTOINV')
+WHERE G.MEDICION = 'EDIF'
+WHERE G.MEDICION = 'PISO'
+WHERE G.MEDICION = 'LOTE'
+WHERE G.MEDICION = 'VERDE'
+WHERE G.MEDICION = 'MULTIUSO'
+
+-->  WHERE G.MEDICION like '%MULTIUSO%'
+que MEDICION contenga las palabras claves
+asi los items padres tendran todas las palabras claves
+
+
+# Para desglosar el ultimo avance de un elemento (depto, piso, edificio, etc.)
+select ITEM, ID_DETALLE, FECHA, AVANCE, OBS, ESTADO
+from REGISTRO
+WHERE ELEMENTO_ID = $ELEMENTO_ID
+AND FECHA = (select max(FECHA) from REGISTRO WHERE ELEMENTO_ID = $ELEMENTO_ID)
+
+
+# para crear la tabla relacion gantt/elemento   (17066 lin)
+create table RELACION as 
+select G.ITEM, E.ELEMENTO_ID, 
+G.TOTAL_INF, G.UNI_LINEA, G.CNT_LINEA, G.MONTO_LINEA, E.PORC_APL,
+G.DSC as dsc_item, 
+E.DSC as dsc_elem
+from GANTT2 as G
+inner join ELEMENTO as E
+ON G.CONTEXTO LIKE concat('%',E.CONTEXTO,'%')
+WHERE G.TOTAL_INF >0
+order by G.ITEM, E.ELEMENTO_ID asc
+
+
+
+
+>>>>>>>>>>>>>>>>>>>>> INICIALIZA Y ACTUALIZA RELACION SI HAY CAMBIOS <<<<<<<<<<<<<<<<<
+Cuando se modifica la estructura GANTT o ELEMENTO, se debe realizar este proceso
+desde: GANTT2 y ELEMENTO
+hacia: RELACION
+
+#borra todo
+truncate table RELACION
+
+#para actualizar ya creadas las nuevas columnas   (17075 lin) (17405 lin)
+insert into RELACION (
+`ITEM`, `ELEMENTO_ID`, `TOTAL_INF`, `UNI_LINEA`, `CNT_LINEA`, `MONTO_LINEA`, `REL_LINEAS`, `REL_PORC_SUM`, `REL_MONTO`, `PORC_APL`, `dsc_item`, `dsc_elem`)
+select G.ITEM, E.ELEMENTO_ID, 
+G.TOTAL_INF, G.UNI_LINEA, G.CNT_LINEA, G.MONTO_LINEA, 0,0,0, E.PORC_APL,
+G.DSC as dsc_item, 
+E.DSC as dsc_elem
+from GANTT2 as G
+inner join ELEMENTO as E
+ON G.CONTEXTO LIKE concat('%',E.CONTEXTO,'%')
+WHERE G.TOTAL_INF >0
+order by G.ITEM, E.ELEMENTO_ID asc
+
+****> se debe corregir el piso 0 y 1 para los casos que tienen 100% aplicabilidad como escalera, barandas, muebles, D.7.1 C.EX.4 C.EX.15 C.7.1 B.7.1      (25 lin)
+## cambiar a 0.5 con los ciclos
+UPDATE `RELACION` 
+SET PORC_APL = 1
+WHERE `ITEM` in ('D.7.1', 'C.EX.4', 'C.EX.15', 'C.7.1', 'B.7.1' )
+and PORC_APL <1
+
+
+# actualiza la cantidad de lineas elemento por item gantt
+update RELACION R1
+, (select ITEM, count(*) as cantidad, sum(PORC_APL) as suma  from RELACION R2 group by ITEM ) as R2
+SET R1.REL_LINEAS = R2.cantidad 
+,R1.REL_PORC_SUM = R2.suma 
+where R1.ITEM = R2.ITEM
+
+
+# actualiza el monto de la linea elemento para un item gantt
+update RELACION 
+SET REL_MONTO = TOTAL_INF / REL_PORC_SUM * PORC_APL
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+
+# cantidad de lineas elemento por cada Item Gantt
+select ITEM, count(*) as cantidad from RELACION group by ITEM 
+
+
+#verifica cantidades
+SELECT `ITEM`, `dsc_item`, `CNT_LINEA`, `REL_LINEAS`, `REL_PORC_SUM` 
+FROM `RELACION` 
+WHERE `CNT_LINEA` <> `REL_PORC_SUM`
+
+#verifica montos       existiendo los que se dividian en 2 y se divi en 20
+SELECT `ITEM`, `TOTAL_INF`, `MONTO_LINEA`, `REL_MONTO`
+FROM `RELACION` 
+WHERE MONTO_LINEA <> REL_MONTO
+
+
+#verifica %aplicacion sumado debe dar igual que el total
+SELECT ITEM, `REL_LINEAS`,  MAX(`REL_PORC_SUM`),  SUM(`PORC_APL`) as suma
+FROM `RELACION` 
+WHERE 1
+group by ITEM
+having `REL_LINEAS` <> suma
+
+
+falta crear el elemento LOTE %1
+
+# verifica la suma de las fracciones de montos de las lineas sea igual al monto informado total, danto diferencias de fracciones
+SELECT `ITEM`, `TOTAL_INF`, sum(`REL_MONTO`) as suma
+FROM `RELACION` 
+WHERE 1
+group by `ITEM`, `TOTAL_INF`
+having TOTAL_INF <> suma
+
+# verifica la suma de las fracciones vs TOTAL_INF 283895.4857 ahora da ---> 283895.970210 vs 283895.97
+SELECT `TOTAL_INF`, sum(`REL_MONTO`) as suma
+FROM `RELACION` 
+WHERE 1
+
+# verifica la suma de gantt donde tiene contexto aplicado en RELACION 283895.970
+SELECT sum(`TOTAL_INF`) FROM `GANTT2` WHERE `CONTEXTO` <> ''
+
+# verifica la suma Gantt vs el total de excel 345814.530 vs 345814.53
+SELECT sum(`TOTAL_INF`)
+FROM `GANTT2` 
+WHERE 1
+
+****> ver problema de hormigonado piso 1, para los casos de los que tienen -1, no los considera, si son por edif deben aplicar 1,5%
+PISO se desglosa en PISO0 PISO1 PISO2 PISO3 PISO4 y anteriormente se tuvo como EDIF_x
+
+
+- GANTT avance por ITEM  (que es la suma de todos los elementos)
+- Diagrama Pantalla avance por ELEMENTO  (corresponde al desglose del Item por cada elemento)
+- Diagrama Detalles avance por ELEMENTO y deglosado por DETALLE (desglose del Item) ej. capas Estructurales
+
+
+#Cargamos Registos al 22/ene/2021 (1121 lin)
+
+
+# verifica la suma de registro avances por ITEM
+SELECT `ITEM`, sum(`MONTO_AVANCE`) as suma
+FROM `REGISTRO`
+WHERE 1
+group by `ITEM`
+
+# verifica la suma de registro avances por ITEM vs GANTT %avance CALc
+select R.ITEM, R.suma, G.DSC, G.TOTAL_INF, (R.suma/G.TOTAL_INF) as porc 
+FROM GANTT2 as G
+,(SELECT ITEM, sum(MONTO_AVANCE) as suma
+FROM REGISTRO group by ITEM) as R
+WHERE R.ITEM = G.ITEM
+
+
+# verifica la suma de registro avances por ELEMENTO
+SELECT ELEMENTO_ID, sum(`MONTO_AVANCE`) as suma
+FROM `REGISTRO`
+WHERE 1
+group by ELEMENTO_ID
+
+# verifica la suma de registro avances por ELEMENTO segun agrupacion especifica de Items Gantt, agrupar por el primer caracter del ITEM
+EDIFICIO POR ITEM PADRE (OBRA GRUESA, TERMINACION, ETC)
+SELECT SUBSTR(ITEM,1,1), SUBSTR(ELEMENTO_ID,1,3), sum(MONTO_AVANCE) as suma
+FROM REGISTRO
+group by SUBSTR(ITEM,1,1), SUBSTR(ELEMENTO_ID,1,3)
+
+#invertido EDIFICIO POR ITEM PADRE (OBRA GRUESA, TERMINACION, ETC)
+SELECT SUBSTR(ELEMENTO_ID,1,3), SUBSTR(ITEM,1,1), sum(MONTO_AVANCE) as suma
+FROM REGISTRO
+group by SUBSTR(ELEMENTO_ID,1,3), SUBSTR(ITEM,1,1)
+
+
+select SUBSTR(ITEM)
+SUBSTRING_INDEX("www.w3schools.com", ".", 2);
+https://www.w3schools.com/Sql/trymysql.asp?filename=trysql_func_mysql_substring_index2
+SELECT SUBSTR('E12.P1.D13' , 1, CHAR_LENGTH(SUBSTRING_INDEX('E12.P1.D13', '.', 1))+2) AS res
+
+#crear una GANTT de Nivel 1 y otra de Nivel 2 con sus montos para agrupar mas rapido
+UPDATE `GANTT2` 
+SET I1 = SUBSTRING_INDEX(ITEM, ".", 1)
+,I2 = SUBSTRING_INDEX(ITEM, ".", 2)
+WHERE 1
+
+UPDATE RELACION
+SET I1 = SUBSTRING_INDEX(ITEM, ".", 1)
+,I2 = SUBSTRING_INDEX(ITEM, ".", 2)
+,E1 = SUBSTRING_INDEX(ELEMENTO_ID, ".", 1)
+WHERE 1
+
+UPDATE REGISTRO
+SET I1 = SUBSTRING_INDEX(ITEM, ".", 1)
+,I2 = SUBSTRING_INDEX(ITEM, ".", 2)
+,E1 = SUBSTRING_INDEX(ELEMENTO_ID, ".", 1)
+WHERE 1
+
+
+# verifica y crea el costo total del ELEMENTO  EDIF
+create table RES_ELEM_COSTO as 
+insert into RES_ELEM_COSTO as (ELEM, suma) 
+select SUBSTR(ELEMENTO_ID,1,3) AS ELEM, sum(REL_MONTO) as suma
+FROM RELACION
+GROUP BY SUBSTR(ELEMENTO_ID,1,3) 
+
+insert into RES_ELEM_COSTO as (ELEM, suma) 
+select SUBSTR(ELEMENTO_ID,1,3) AS ELEM, sum(REL_MONTO) as suma
+FROM RELACION
+GROUP BY SUBSTR(ELEMENTO_ID,1,3) 
+
+
+
+>>>>>>>>>>>>>>>>>   ACTUALIZA ELEM_SEG    <<<<<<<<<<<<<<<<<<<<<
+Cuando se modifique la RELACION se debera actualizar el costo segmentado
+desde: RELACION
+hacia: ELEM_SEG
+
+# PASO A PASO ELEMENTOS para todos los siguientes casos =>> 1,3,5,6,8,9,10
+update  ELEM_SEG as E
+,(select SUBSTR(ELEMENTO_ID,1,3) AS ELEM, sum(REL_MONTO) as REL_MONTO_SUMA
+FROM RELACION
+GROUP BY SUBSTR(ELEMENTO_ID,1,3) )  as R
+set E.COSTO = R.REL_MONTO_SUMA
+WHERE R.ELEM = E.ID
+AND CHAR_LENGTH(R.ELEM) = 3
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+#test
+SELECT ID, CHAR_LENGTH(ID)
+FROM ELEM_SEG
+
+# PASO A PASO ITEMS para todos los siguientes casos =>> 1,3,5,6,8,9,10
+update  GANTT_SEG as G
+,(select t1.ITEM as ID, sum(t2.TOTAL_INF)  as COSTO_TOT
+FROM GANTT2 t1, GANTT2 t2
+WHERE t2.ITEM LIKE CONCAT(t1.ITEM, '%')  
+GROUP BY t1.ITEM  )  as R
+set G.COSTO = R.COSTO_TOT
+WHERE R.ID = G.ITEM
+
+
+
+>>>>>>>>>>>>>>>>>   ACTUALIZA GANTT_SEG    <<<<<<<<<<<<<<<<<<<<<
+Cuando se modifique la GANTT se debera actualizar el costo segmentado
+desde: GANTT2
+hacia: GANTT_SEG
+
+# ACTUALIZADO -->  PASO A PASO ITEMS para todos los siguientes casos =>> 1,3,5,6,8,9,10
+update  GANTT_SEG as G
+,(select t1.ORD, t1.ITEM as ID, sum(t2.TOTAL_INF)  as COSTO_TOT
+FROM GANTT2 t1, GANTT2 t2
+WHERE t2.ORD LIKE CONCAT(t1.ORD, '%')  
+GROUP BY t1.ORD )  as R
+set G.COSTO = R.COSTO_TOT
+WHERE R.ID = G.ITEM
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+
+# PASO A PASO ITEMS AVANCE para todos los siguientes casos =>> 1,3,5,6,8,9,10
+create table AVANCE_GANTT_SEG as 
+select t1.ITEM as ID, sum(t2.MONTO_AVANCE)  as AVANCE_TOT
+FROM GANTT2 t1, AVANCE t2
+WHERE t2.ITEM LIKE CONCAT(t1.ITEM, '%')  
+GROUP BY t1.ITEM 
+
+update  AVANCE_GANTT_SEG as G
+,(select t1.ITEM as ID, sum(t2.MONTO_AVANCE)  as AVANCE_TOT
+FROM GANTT2 t1, AVANCE t2
+WHERE t2.ITEM LIKE CONCAT(t1.ITEM, '%')  
+GROUP BY t1.ITEM  )  as R
+set G.MONTO_AVANCE = R.AVANCE_TOT
+WHERE G.ITEM = R.ID
+
+
+# PASO A PASO ELEMENT AVANCE para todos los siguientes casos =>> 1,3,5,6,8,9,10
+create table AVANCE_ELEM_SEG as 
+select t1.ELEMENTO_ID as ID, sum(t2.MONTO_AVANCE)  as AVANCE_TOT
+FROM ELEMENTO t1, AVANCE t2
+WHERE t2.ELEMENTO_ID LIKE CONCAT(t1.ELEMENTO_ID, '%') 
+GROUP BY t1.ELEMENTO_ID
+
+====>>>>>
+create table AVANCE_ELEM_SEG as 
+insert into AVANCE_ELEM_SEG (ELEMENTO_ID, MONTO_AVANCE)
+select t1.ID, sum(t2.MONTO_AVANCE)  as AVANCE_TOT
+FROM ELEM_SEG t1, AVANCE t2
+WHERE t2.ELEMENTO_ID LIKE CONCAT(t1.ID, '%') 
+GROUP BY t1.ID
+<=====
+
+update  AVANCE_ELEM_SEG as S
+,(select t1.ELEMENTO_ID as ID, sum(t2.MONTO_AVANCE)  as AVANCE_TOT
+FROM ELEMENTO t1, AVANCE t2
+WHERE t2.ELEMENTO_ID LIKE CONCAT(t1.ELEMENTO_ID, '%') 
+GROUP BY t1.ELEMENTO_ID  )  as R
+set S.MONTO_AVANCE = R.AVANCE_TOT
+WHERE S.ELEMENTO_ID = R.ID
+
+
+#test1
+select t1.ITEM,t1.TOTAL_INF, t2.ITEM, t2.TOTAL_INF 
+FROM GANTT2 t1, GANTT2 t2
+WHERE t2.ITEM LIKE CONCAT(t1.ITEM, '%')  
+ORDER BY t1.ITEM ASC
+
+#test2
+select t1.ITEM, sum(t2.TOTAL_INF) 
+FROM GANTT2 t1, GANTT2 t2
+WHERE t2.ITEM LIKE CONCAT(t1.ITEM, '%')  
+GROUP BY t1.ITEM 
+ORDER BY t1.ITEM ASC
+
+
+
+
+
+#verifica el %avance y costos del ELEMENTO segun su avance
+SELECT SUBSTR(R.ELEMENTO_ID,1,3), sum(R.MONTO_AVANCE) as avance, C.suma, sum(R.MONTO_AVANCE)/C.suma as porc
+FROM REGISTRO R, RES_ELEM_COSTO C
+WHERE SUBSTR(R.ELEMENTO_ID,1,3) = C.ELEM
+group by SUBSTR(ELEMENTO_ID,1,3)
+# con resumen
+SELECT R.E1, sum(R.MONTO_AVANCE) as avance, C.costo, sum(R.MONTO_AVANCE)/C.costo as porc
+FROM REGISTRO R, RES_ELEM_COSTO C
+WHERE R.E1 = C.ELEM
+group by R.E1
+# con resumen LOTE y DSC
+SELECT R.E1, L.DSC, sum(R.MONTO_AVANCE) as avance, C.costo, sum(R.MONTO_AVANCE)/C.costo as porc
+FROM REGISTRO R, RES_ELEM_COSTO C, LOTE L
+WHERE R.E1 = C.ELEM
+AND L.AREA = C.ELEM
+group by R.E1
+# con resumen Nivel 2
+SELECT R.E1, E.CONTEXTO, L.DSC, sum(R.MONTO_AVANCE) as avance, C.costo, sum(R.MONTO_AVANCE)/C.costo as porc
+FROM REGISTRO R, RES_ELEM_COSTO C, LOTE L, ELEMENTO E
+WHERE R.E1 = C.ELEM
+AND L.AREA = C.ELEM
+AND E.EDIFICIO = R.E1
+AND E.EDIFICIO = 'E12'
+group by R.E1, E.CONTEXTO
+
+SELECT R.E1, E.TIPO, L.DSC, sum(R.MONTO_AVANCE) as avance, C.costo, sum(R.MONTO_AVANCE)/C.costo as porc
+FROM REGISTRO R, RES_ELEM_COSTO C, LOTE L, ELEMENTO E
+WHERE R.E1 = C.ELEM
+AND L.AREA = C.ELEM
+AND E.EDIFICIO = R.E1
+AND E.EDIFICIO = 'E12'
+group by R.E1, E.TIPO
+
+ej
+edificio X
+RellenoEstructural	Nivel[0|1]	Capa[1..6]
+Fundacion		Nivel[0|1]
+Piso			Nivel[0|1]	Piso[0..4]	[muro|cielo]	ciclo[1|2]
+Terminacion		Nivel[0|1]	Piso[0..4]	depto[1..4]
+Comunes			Nivel[0|1]	Piso[0..4]
+Techo			[corona|sobrelosa|juntadilatacion]
+
+
+
+
+
+
+
+
+
+# lista de elementos y sus items, RELACION
+SELECT ELEMENTO_ID, ITEM, REL_MONTO, dsc_item, dsc_elem
+FROM RELACION 
+WHERE 1
+ORDER BY ELEMENTO_ID, ITEM
+
+
+
+
+# lista de elementos y sus items, RELACION JOIN ELEM_SEG para presentar su arbol
+SELECT S.ID, R.ELEMENTO_ID, R.ITEM, R.REL_MONTO, R.dsc_item, R.dsc_elem
+FROM ELEM_SEG S 
+LEFT JOIN RELACION R ON R.ELEMENTO_ID = S.ID
+ORDER BY S.ID, R.ELEMENTO_ID, R.ITEM
+
+# ahora si Lista elementos sub items nuevo ID_S
+SELECT S.ID_S, R.ELEMENTO_ID, R.ITEM, R.REL_MONTO, R.dsc_item, R.dsc_elem
+FROM ELEM_SEG S 
+LEFT JOIN RELACION R ON R.ELEMENTO_ID = S.ID
+ORDER BY S.ID_S, R.ELEMENTO_ID, R.ITEM
+
+
+
+# Nuevo ID para ELEM_SEG     <<<<<< ERR
+SELECT CONCAT('O.', SUBSTR(ELEMENTO_ID,1,1), '.', SUBSTR(ELEMENTO_ID,2,2), '.', 
+SUBSTR(ELEMENTO_ID,5,1), '.', SUBSTR(ELEMENTO_ID,6,1), '.', SUBSTR(ELEMENTO_ID,8,1), 
+'.', SUBSTR(ELEMENTO_ID,9,2) ) as ID  
+FROM AVANCE_ELEM_SEG 
+WHERE 1
+order by ELEMENTO_ID
+
+
+# Nuevo ID para ELEM_SEG
+SELECT CONCAT('O.', SUBSTR(ID,1,1), '.', SUBSTR(ID,2,2), '.', 
+SUBSTR(ID,5,1), '.', SUBSTR(ID,6,1), '.', SUBSTR(ID,8,1), 
+'.', SUBSTR(ID,9,2) ) as ID  
+FROM ELEM_SEG 
+WHERE 1
+order by ID
+
+
+UPDATE ELEM_SEG as E
+, (SELECT ID, CONCAT('O.', SUBSTR(ID,1,1), '.', SUBSTR(ID,2,2), '.', 
+SUBSTR(ID,5,1), '.', SUBSTR(ID,6,1), '.', SUBSTR(ID,8,1), 
+'.', SUBSTR(ID,9,2) ) as ID_S
+FROM ELEM_SEG 
+WHERE 1
+order by ID) as R
+SET E.ID_S = R.ID_S
+WHERE E.ID = R.ID
+
+UPDATE ELEM_SEG
+SET ID_S=replace(ID_S, '....', '')
+WHERE 1
+
+select *
+from ELEM_SEG
+WHERE ID_S LIKE '%.'
+
+update ELEM_SEG
+set ID_S = replace(ID_S, 'D.', 'D')
+WHERE ID_S LIKE '%.'
+
+update ELEM_SEG
+set ID_S = replace(ID_S, 'C.', 'C')
+WHERE ID_S LIKE '%.'
+
+update ELEM_SEG
+set ID_S = 'O.E'
+WHERE ID = 'E'
+
+update ELEM_SEG
+set ID_S = 'O.L'
+WHERE ID = 'L'
+
+# clonar el O.L.L a O.L, solo el monto
+update ELEM_SEG
+set ID_S = 'O.L.L'
+WHERE ID = 'O.L'
+
+# clonar Edificios para crea el V de varios
+insert into ELEM_SEG
+(ID_S, ID, TIPO, COSTO)
+select CONCAT(E.ID_S,'.V'), ID, TIPO, E.COSTO
+from ELEM_SEG E
+WHERE E.ID_S LIKE 'O.E%'
+AND LENGTH(E.ID_S) = 6
+
+update ELEM_SEG
+SET ID= ''
+,TIPO = ''
+WHERE ID_S LIKE 'O.E%'
+AND LENGTH(ID_S) = 6
+
+
+delete ELEM_SEG 
+WHERE ID_S LIKE 'O.E%.N'
+AND LENGTH(ID_S) = 8
+AND TIPO = 'R'
+
+
+
+#obtener el costo del ELEMENTO desde la RELACION
+#verificar la suma de los elementos
+#comparar participacion de los ELEMENTOS en el TOTAL del proyecto y la GANTT
+#comparar el avance de cada elemento segun su costo individual
+#asociar todos los elementos de los ELEMENTOS EDxx y obtener su avance
+#segregar los avances y costos por tipo de OBRA [gruesa, relleno, terminacion, comun]
+
+#corregir codigos ITEM carga GANTT agregando los ceros
+
+#CORREGIR GANTT G.C1 esta mal
+
+# visualizar Lotes
+SELECT * FROM `LOTE`
+
+SELECT DSC, TIP, PISOS, DEPTOS, * FROM `EDIFICIO`
+where ELEMENTO_ID = 
+
+
+SELECT DSC, TIPO, * FROM `ELEMENTO`
+where ELEMENTO_ID = 
+and EDIFICIO = 
+
+#lista de relaciones del edif
+SELECT R.ITEM, R.ELEMENTO_ID, E.TIPO, R.REL_MONTO, R.dsc_item, R.dsc_elem
+FROM RELACION as R
+, (SELECT ELEMENTO_ID, DSC, TIPO FROM `ELEMENTO`
+where EDIFICIO = $ELEMENTO_ID 
+AND TIPO IN ('NIVEL', 'LOSA', 'PISO') ) as E
+WHERE R.ELEMENTO_ID = E.ELEMENTO_ID 
+ORDER BY E.TIPO, R.ITEM, R.ELEMENTO_ID
+
+
+#lista de elementos del edificio
+SELECT ELEMENTO_ID, DSC, TIPO FROM `ELEMENTO`
+where EDIFICIO = $ELEMENTO_ID 
+AND TIPO IN ('NIVEL', 'LOSA', 'PISO')
+
+
+#Cambio para visualizacion
+Agregar ciclos C1, C2 y C3
+en el caso de las losas cielo las hacen C1, C2-C3 y no son proporcionales
+en el caso de los muros nivel 0, los hacen en tres ciclos
+agregar orden secuencia presentacion
+agregar altura y ancho(por losa cielo)
+Segregar muro y losa cielo
+
+
+FULL para TABLA DYN
+>>>>>>>>>>>>>>>>>>>>>>>>>
+select G.ITEM, G.DSC, G.TOTAL_INF, SUM(A.MONTO_AVANCE) as MONTO_AVANCE, ROUND(SUM(A.MONTO_AVANCE) /G.TOTAL_INF*100,2) as PORC_AVANCE , group_concat(CONCAT_WS(':', A.ELEMENTO_ID, A.MONTO_AVANCE) order by A.ELEMENTO_ID asc separator ';')
+from GANTT2 G
+LEFT JOIN AVANCE A
+ON G.ITEM = A.ITEM
+group by G.ITEM
+order by G.ITEM
+<<<<<<<<<<<<<<<<<<<<<<<<<
+
+select G.ITEM, G.DSC, GS.COSTO, G.TOTAL_INF, SUM(A.MONTO_AVANCE) as MONTO_AVANCE, ROUND(SUM(A.MONTO_AVANCE) /G.TOTAL_INF*100,2) as PORC_AVANCE , group_concat(CONCAT_WS(':', A.ELEMENTO_ID, A.MONTO_AVANCE) order by A.ELEMENTO_ID asc separator ';')
+from GANTT2 G
+LEFT JOIN AVANCE A
+ON G.ITEM = A.ITEM
+LEFT JOIN GANTT_SEG GS
+ON GS.ITEM = G.ITEM
+group by G.ITEM
+order by G.ITEM
+
+>>>>>> CON DETALLE Y TOTALIZADO POR GRUPOS
+select G.ORD, G.DSC, GS.COSTO, AGS.MONTO_AVANCE AVANCE, ROUND(AGS.MONTO_AVANCE/GS.COSTO*100,2) as AVC, G.TOTAL_INF, SUM(A.MONTO_AVANCE) as MONTO_AVANCE, ROUND(SUM(A.MONTO_AVANCE) /G.TOTAL_INF*100,2) as PORC_AVANCE , group_concat(CONCAT_WS(':', A.ELEMENTO_ID, A.MONTO_AVANCE) order by A.ELEMENTO_ID asc separator ';') as DETALLE
+from GANTT2 G
+LEFT JOIN AVANCE A
+ON G.ITEM = A.ITEM
+LEFT JOIN GANTT_SEG GS
+ON GS.ITEM = G.ITEM
+LEFT JOIN AVANCE_GANTT_SEG AGS
+ON AGS.ITEM = G.ITEM
+group by G.ORD
+order by G.ORD
+
+#Se agrega el ITEM Z con la diferencia del proyecto 0,031
+# Se agraga a GANTT_SEG
+INSERT INTO `GANTT_SEG` (`ITEM`, `TIPO`, `COSTO`) VALUES ('Z', 'H', '0.031')
+
+# Actualizad la columna ORD para ordenar los items
+update GANTT2 G
+, GANTT_ORD O
+set G.ORD = O.ORD
+WHERE G.ITEM = O.ITEM
+
+
+#corregir depto 34, volver al piso 3
+update ELEMENTO
+SET PISO = 'P3'
+, ELEMENTO_ID = REPLACE(ELEMENTO_ID, 'P4', 'P3')
+where DEPTO = 'D34'
+
+update ELEM_SEG
+SET ID_S = REPLACE(ID_S, 'P.4', 'P.3')
+, ID = REPLACE(ID, 'P4', 'P3')
+, TIPO = 'H'
+where ID like '%D34'
+
+update AVANCE_ELEM_SEG
+SET ELEMENTO_ID = REPLACE(ELEMENTO_ID , 'P4', 'P3')
+where ELEMENTO_ID like '%D34'
+
+
+update REGISTRO
+SET ELEMENTO_ID = REPLACE(ELEMENTO_ID , 'P4', 'P3')
+where ELEMENTO_ID like '%D34'
+
+update AVANCE
+SET ELEMENTO_ID = REPLACE(ELEMENTO_ID , 'P4', 'P3')
+where ELEMENTO_ID like '%D34'
+
+update RELACION
+SET ELEMENTO_ID = REPLACE(ELEMENTO_ID , 'P4', 'P3')
+where ELEMENTO_ID like '%D34'
+
+
+
+>>>>>>>>>>>>>>> PROCESO DE ACTUALIZACION DE REGISTRO AVANCE AL AVANCE <<<<<<<<<<<<<<<
+se debe realizar al concluir de actualizar los registros de avance del dia, antes de obtener el informe
+desde: REGISTRO
+hacia: AVANCE
+resumen: AVANCE_GANTT_SEG
+resumen: AVANCE_ELEM_SEG
+
+# actualiza avance desde el ultimo registro de cada item,elemento
+UPDATE AVANCE as A
+,( select D.*
+from REGISTRO as D
+,(select ITEM, ELEMENTO_ID, max(FECHA) as FECHA
+from REGISTRO
+group by ITEM, ELEMENTO_ID) as F
+where D.ITEM = F.ITEM
+and D.ELEMENTO_ID = F.ELEMENTO_ID
+and D.FECHA = F.FECHA ) as R
+SET A.MONTO_AVANCE = R.MONTO_AVANCE
+, A.PORC_AVANCE = R.PORC_AVANCE
+, A.FECHA = R.FECHA
+, A.OBS = R.OBS
+, A.ESTADO = R.ESTADO
+where A.ITEM = R.ITEM
+and A.ELEMENTO_ID = R.ELEMENTO_ID
+
+# actualiza la segregacion del avance por item
+update  AVANCE_GANTT_SEG as G
+,(select t1.ITEM as ID, sum(t2.MONTO_AVANCE)  as AVANCE_TOT
+FROM GANTT2 t1, AVANCE t2
+WHERE t2.ITEM LIKE CONCAT(t1.ITEM, '%')  
+GROUP BY t1.ITEM  )  as R
+set G.MONTO_AVANCE = R.AVANCE_TOT
+WHERE G.ITEM = R.ID
+
+# actualiza la segregacion del avance por elemento
+update  AVANCE_ELEM_SEG as S
+,(select t1.ELEMENTO_ID as ID, sum(t2.MONTO_AVANCE)  as AVANCE_TOT
+FROM ELEMENTO t1, AVANCE t2
+WHERE t2.ELEMENTO_ID LIKE CONCAT(t1.ELEMENTO_ID, '%') 
+GROUP BY t1.ELEMENTO_ID  )  as R
+set S.MONTO_AVANCE = R.AVANCE_TOT
+WHERE S.ELEMENTO_ID = R.ID
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
+COSTO_PROY => SUMA DE TODOS LOS COSTOS_ITEMS
+UN ITEM -> ITEM MAYOR O SUB ITEM O HOJA
+ITEM_COSTO => UN ITEM SU COSTO DE SEGMENTO
+*ITEM_PORC_COSTO_PROY => COSTO_ITEM/COSTO_PROY   UN ITEM CUANTO (%) REPRESENTA SU COSTO DEL COSTO TOTAL DEL PROYECTO
+ITEM_MONTO_AVANCE => MONTO ASIGNADO EN REGISTRO DE AVANCE PARA EL ITEM
+AVANCE_PROY => SUMA DE TODOS LOS AVANCES_ITEMS
+ITEM_PORC_AVANCE => MONTO_ITEM/COSTO_ITEM
+*ITEM_PORC_AVANCE_PROY => MONTO_ITEM/AVANCE_PROY
+
+REGISTRO ANTERIOR --> para periodos mensuales respaldado en un cierre de mes
+*MONTO_AVANCE_VS_ANTERIOR => MONTO_ITEM - MONTO_ITEM_ANTERIOR
+*PORC_AVANCE_VS_ANTERIOR => DIFF_MONTO_ANT/COSTO_PROY
+
+
+
+-------------------
+
+# seleccionar los items Gantt para presentar al elegir un elemento
+select G.ORD, R.ITEM, G.DSC, R.ELEMENTO_ID, R.dsc_elem, R.TOTAL_INF, R.REL_MONTO, R.REL_PORC_SUM, R.PORC_APL
+from GANTT2 as G
+LEFT JOIN RELACION as R
+ON G.ITEM = R.ITEM
+AND R.ELEMENTO_ID = 'E02.P3.D34'
+WHERE G.CONTEXTO LIKE (select CONCAT('%', CONTEXTO, '%') CTX from ELEMENTO where ELEMENTO_ID = 'E02.P3.D34')
+ORDER BY G.ORD
+
+
+
+#visualizacion ITEMS
+SELECT S.ID_S as ITEM, E.ELEMENTO_ID, E.DSC, S.COSTO, A.MONTO_AVANCE
+, ROUND(A.MONTO_AVANCE/S.COSTO*100, 2) AS PORC_AVANCE 
+FROM ELEMENTO E 
+LEFT JOIN ELEM_SEG S 
+ON E.ELEMENTO_ID = S.ID  
+LEFT JOIN AVANCE_ELEM_SEG A 
+ON A.ELEMENTO_ID = E.ELEMENTO_ID 
+ORDER BY E.ELEMENTO_ID ASC
+
+
+SELECT S.ID_S as ITEM, E.ELEMENTO_ID , E.DSC, S.COSTO, A.MONTO_AVANCE
+, ROUND(A.MONTO_AVANCE/S.COSTO*100, 2) AS PORC_AVANCE 
+FROM ELEM_SEG S 
+LEFT JOIN ELEMENTO E 
+ON E.ELEMENTO_ID = S.ID  
+LEFT JOIN AVANCE_ELEM_SEG A 
+ON A.ELEMENTO_ID = S.ID
+ORDER BY S.ID_S ASC
+
+
+SELECT S.ID_S , E.ELEMENTO_ID as ITEM, E.DSC, S.COSTO, A.MONTO_AVANCE
+, ROUND(A.MONTO_AVANCE/S.COSTO*100, 2) AS PORC_AVANCE 
+FROM ELEMENTO E 
+LEFT JOIN ELEM_SEG S 
+ON E.ELEMENTO_ID = S.ID  
+LEFT JOIN AVANCE_ELEM_SEG A 
+ON A.ELEMENTO_ID = E.ELEMENTO_ID
+ORDER BY E.ELEMENTO_ID ASC
+
+===================================
+
+
+#secuencia para visualizar rapido
+
+vista1
+EDIFICIOS y LOTE    elementos nivel1
+presenta: nombre y porcentaje % de avance
+selecciona uno y abre listado de elementos
+select ELEMENTO_ID, DSC, TIPO, CONTEXTO
+from ELEMENTO
+where TIPO in ('EDIFICIO', 'LOTE')
+
+
+select E.ELEMENTO_ID, E.DSC, S.COSTO, A.MONTO_AVANCE
+, ROUND(A.MONTO_AVANCE/S.COSTO*100, 2) AS PORC_AVANCE
+, E.TIPO, E.CONTEXTO
+FROM ELEMENTO E 
+LEFT JOIN ELEM_SEG S 
+ON E.ELEMENTO_ID = S.ID  
+LEFT JOIN AVANCE_ELEM_SEG A 
+ON A.ELEMENTO_ID = E.ELEMENTO_ID
+where E.TIPO in ('EDIFICIO', 'LOTE')
+
+select E.ELEMENTO_ID, E.DSC, S.COSTO, A.MONTO_AVANCE
+, ROUND(A.MONTO_AVANCE/S.COSTO*100, 2) AS PORC_AVANCE
+, E.TIPO, E.CONTEXTO
+FROM LOTE L, ELEMENTO E 
+LEFT JOIN ELEM_SEG S 
+ON E.ELEMENTO_ID = S.ID  
+LEFT JOIN AVANCE_ELEM_SEG A 
+ON A.ELEMENTO_ID = E.ELEMENTO_ID
+where L.AREA  = E.ELEMENTO_ID
+
+
+vista2
+ELEMENTOS           elementos hijos ordenados segun forma edificio
+presenta: nombres y porcentaje % de avance
+selecciona uno y abre listado con sus items gantt
+permite: volver
+select ELEMENTO_ID, DSC, TIPO, CONTEXTO
+from ELEMENTO
+where ELEMENTO_ID like 'E01.%'
+and TIPO not in ('EDIFICIO', 'LOTE')
+ORDER BY ELEMENTO_ID DESC
+
+select E.ELEMENTO_ID, E.DSC, E.COSTO, A.MONTO_AVANCE
+, ROUND(A.MONTO_AVANCE/S.COSTO*100, 2) AS PORC_AVANCE
+, E.TIPO, E.CONTEXTO
+FROM ELEMENTO E 
+LEFT JOIN ELEM_SEG S 
+ON E.ELEMENTO_ID = S.ID  
+LEFT JOIN AVANCE_ELEM_SEG A 
+ON A.ELEMENTO_ID = E.ELEMENTO_ID
+where E.ELEMENTO_ID like 'E01.%'
+and E.TIPO not in ('EDIFICIO', 'LOTE')
+ORDER BY E.ELEMENTO_ID DESC
+
+### ES NECESARIO realizar un cambio en la estructura ELEMENTO para que Piso no sea la agrupacion del todo el Piso, sino, P.C sea lo comun del Piso o detalle
+select E.ELEMENTO_ID, E.DSC, E.COSTO COSTO_ELEM
+, S.COSTO COSTO_SEG, A.MONTO_AVANCE, ROUND(A.MONTO_AVANCE/S.COSTO*100, 2) AS PORC_AVANCE_SEG 
+, E.TIPO, E.CONTEXTO
+FROM ELEMENTO E 
+LEFT JOIN ELEM_SEG S 
+ON E.ELEMENTO_ID = S.ID  
+LEFT JOIN AVANCE_ELEM_SEG A
+ON A.ELEMENTO_ID = E.ELEMENTO_ID
+where E.ELEMENTO_ID like 'E01.%'
+and E.TIPO not in ('EDIFICIO', 'LOTE')
+ORDER BY E.ELEMENTO_ID DESC
+
+
+vista3
+ITEMS GANTT	    items gantt o mini gantt del elemento
+presenta: tabla mini gantt con sus items, nombres, estructura y valor del item y %avance actual
+presenta el total en una linea final
+ingresa: permite modificar el %avance
+permite: grabar o volver
+select G.ORD, G.ITEM, G.DSC, R.ELEMENTO_ID, R.dsc_elem, R.TOTAL_INF, R.REL_MONTO, R.REL_PORC_SUM, R.PORC_APL
+from GANTT2 as G
+LEFT JOIN RELACION as R
+ON G.ITEM = R.ITEM
+AND R.ELEMENTO_ID = 'E02.P3.D34'
+WHERE G.CONTEXTO LIKE (select CONCAT('%', CONTEXTO, '%') CTX from ELEMENTO where ELEMENTO_ID = 'E02.P3.D34')
+ORDER BY G.ORD
+
+#v2
+select G.ORD, G.ITEM, G.DSC, R.ELEMENTO_ID, R.dsc_elem, R.TOTAL_INF, R.REL_MONTO, R.REL_PORC_SUM, R.PORC_APL, A.PORC_AVANCE, A.MONTO_AVANCE, A.OBS, A.ESTADO
+from GANTT2 as G
+LEFT JOIN RELACION as R
+ON G.ITEM = R.ITEM
+AND R.ELEMENTO_ID = 'E02.P3.D34'
+LEFT JOIN AVANCE as A
+ON G.ITEM = A.ITEM
+AND R.ELEMENTO_ID = A.ELEMENTO_ID
+WHERE G.CONTEXTO LIKE (select CONCAT('%', CONTEXTO, '%') CTX from ELEMENTO where ELEMENTO_ID = 'E02.P3.D34')
+ORDER BY G.ORD
+
+
+vista4
+ITEMS ELEMENTOS	    lista de elementos asociados al item Gantt
+presenta: tabla con sus elementos, nombres y valor del elemento y %avance actual
+presenta el total en una linea final
+ingresa: permite modificar el %avance
+permite: grabar o volver
+select *
+from RELACION R
+left join ELEMENTO E
+on E.ELEMENTO_ID = R.ELEMENTO_ID
+left join AVANCE A
+on A.ELEMENTO_ID = R.ELEMENTO_ID
+and A.ITEM = R.ITEM
+WHERE R.ITEM = 'F.4.1.3'
+ORDER BY R.ELEMENTO_ID
+
+
+vista0
+GANTT		   lista de items Gantt
+presenta: tabla con sus items, nombres y valor del elemento y %avance actual
+presenta el total en una linea final
+select G.ORD, G.ITEM, G.DSC, GS.COSTO, G.TOTAL_INF, A.MONTO_AVANCE, ROUND(A.MONTO_AVANCE/GS.COSTO,2) PORC_AVANCE
+from GANTT2 as G
+LEFT JOIN AVANCE_GANTT_SEG as A
+ON G.ITEM = A.ITEM
+LEFT JOIN GANTT_SEG as GS
+ON G.ITEM = GS.ITEM
+ORDER BY G.ORD
+
+
+
+
+>>>>>>>>>>>>>>>>>>>>  CAMBIO EN TABLA ELEMENTO <<<
+
+#se agregan dos columnas para pre calcular los costos de los elementos y su participacion
+ALTER TABLE `ELEMENTO` ADD `COSTO` DECIMAL(13,6) NULL AFTER `DEPTO`, ADD `COSTO_PORC` DECIMAL(13,10) NULL AFTER `COSTO`;
+
+
+UPDATE ELEMENTO E
+, (select R.ELEMENTO_ID, SUM(R.REL_MONTO) COSTO, (SUM(R.REL_MONTO)/P.MONTO_TOTAL) PORC
+from RELACION R,
+PROYECTO P
+group by R.ELEMENTO_ID) R
+
+SET E.COSTO = R.COSTO
+, E.COSTO_PORC = R.PORC
+WHERE E.ELEMENTO_ID = R.ELEMENTO_ID
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+Incluir el nivel de elemento PISO.C1 y Piso.C2
+
+
+cambiar Nivel por Fundacion
+SELECT replace(ELEMENTO_ID, 'N','F' ) FROM `RELACION` WHERE `ELEMENTO_ID` LIKE '%N%'
+update RELACION
+SET ELEMENTO_ID = replace(ELEMENTO_ID, 'N','F' ) 
+WHERE ELEMENTO_ID LIKE '%N%'
+
+update REGISTRO
+SET ELEMENTO_ID = replace(ELEMENTO_ID, 'N','F' ) 
+WHERE ELEMENTO_ID LIKE '%N%'
+
+update ELEMENTO
+SET ELEMENTO_ID = replace(ELEMENTO_ID, 'N','F' ) 
+WHERE ELEMENTO_ID LIKE '%N%'
+
+update ELEM_SEG
+SET ID = replace(ID, 'N','F' ) 
+,ID_S = replace(ID_S, 'N','F' ) 
+WHERE ID LIKE '%N%'
+
+update AVANCE
+SET ELEMENTO_ID = replace(ELEMENTO_ID, 'N','F' ) 
+WHERE ELEMENTO_ID LIKE '%N%'
+
+update AVANCE_ELEM_SEG
+SET ELEMENTO_ID = replace(ELEMENTO_ID, 'N','F' ) 
+WHERE ELEMENTO_ID LIKE '%N%'
+
+
+
+>>>>>>>>>>>>>>>>>>>>>>>>> ELEM_SEG >>>>>>>>>>>>>>>>>>>>>>>
+# faltan columnas, debe agregarse el ID_S y el TIPO en ELEMENTO para completar la estructura
+
+insert into ELEM_SEG (ID_S, ID, COSTO)
+select t1.ELEMENTO_ID ID_S, t1.ELEMENTO_ID as ID, sum(t2.REL_MONTO)  as COSTO_TOT
+FROM ELEMENTO t1, RELACION t2
+WHERE t2.ELEMENTO_ID LIKE CONCAT(t1.ELEMENTO_ID, '%')  
+GROUP BY t1.ELEMENTO_ID 
+
+update ELEM_SEG
+SET COSTO = 0
+
+update ELEM_SEG S
+, (select t1.ELEMENTO_ID as ID, sum(t2.REL_MONTO)  as COSTO_TOT
+FROM ELEMENTO t1, RELACION t2
+WHERE t2.ELEMENTO_ID LIKE CONCAT(t1.ELEMENTO_ID, '%')  
+GROUP BY t1.ELEMENTO_ID ) as R
+SET S.COSTO = R.COSTO_TOT
+WHERE S.ID = R.ID
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+>>>>>>>>>>>>>>>>>>>>>>>>> GANTT_SEG >>>>>>>>>>>>>>>>>>>>>>>
+# faltan columnas, debe agregarse el TIPO en GANTT para completar la estructura
+
+insert into GANTT_SEG (ITEM, TIPO, COSTO)
+select t1.ITEM, '', sum(t2.TOTAL_INF)  as COSTO_TOT
+FROM GANTT t1, GANTT t2
+WHERE t2.ITEM LIKE CONCAT(t1.ITEM, '%')  
+GROUP BY t1.ITEM 
+
+update GANTT_SEG 
+SET COSTO = 0
+
+update  GANTT_SEG as G
+,(select t1.ORD, t1.ITEM as ID, sum(t2.TOTAL_INF)  as COSTO_TOT
+FROM GANTT2 t1, GANTT2 t2
+WHERE t2.ORD LIKE CONCAT(t1.ORD, '%')  
+GROUP BY t1.ORD )  as R
+set G.COSTO = R.COSTO_TOT
+WHERE R.ID = G.ITEM 
+
+<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+GENERAR AVANCE INICIAL CON FULL REL
+
+INSERT INTO AVANCE 
+(FECHA, ITEM, I1, I2, ELEMENTO_ID, E1, PORC_AVANCE, MONTO_AVANCE, OBS, ESTADO)
+SELECT NOW(), ITEM, I1, I2, ELEMENTO_ID, E1, 0,0, '', ''  FROM RELACION
+
+-----------------------
+
+#actualizar desc de Ciclos
+SELECT CONCAT(DSC, ' Ciclo1') FROM `ELEMENTO` 
+WHERE `ELEMENTO_ID` like  '%.C1%'
+and `DSC` like '%Piso%'
+
+update ELEMENTO
+set DSC = CONCAT(DSC, ' Ciclo1') 
+WHERE ELEMENTO_ID like  '%.C1%'
+and DSC like '%Piso%'
+ 
+====================
+
+#problemas con la generacion de lineas RELACION en forma exagerada
+#Cuando no tiene CONTEXTO trae el LIKE de %% lo que aumenta las combinaciones
+# lo mismo ocurre en la vista3 
+
+select G.ITEM,  E.ELEMENTO_ID,  G.TOTAL_INF, E.PORC_APL, G.DSC as dsc_item, E.DSC as dsc_elem 
+					from GANTT2 as G 
+					inner join ELEMENTO as E 
+					ON G.CONTEXTO LIKE concat('%',E.CONTEXTO,'%')
+AND E.CONTEXTO <> "" 
+					WHERE G.TOTAL_INF >0 
+                    AND G.ITEM = 'A.3.1.1'
+					order by G.ITEM, E.ELEMENTO_ID asc
+
+
+PORC_APL   agregar mas decimal 2 a 3
+agregar a REGISTRO y AVANCE el monto TOTAL_INF y el MONTO_REL 
+
+SELECT IF((SELECT CASE WHEN 1>0 THEN 'true' ELSE 'false' END),'true','false');

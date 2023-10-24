@@ -1,0 +1,45 @@
+CREATE TABLE IF NOT EXISTS `id15957446_db`.`GANTT` (
+  `ITEM` varchar(10)
+, `DESC` varchar(75)
+, `UNIDAD` varchar(10)
+, `CANTIDAD` decimal(10,3)
+, `PRECIO` decimal(10,3)
+, `TOTAL_CALC` decimal(10,3)
+, `diff` decimal(8,3)
+, `TOTAL_INF` decimal(10,3)
+, `MONTO_X_DIA` decimal(8,3)
+, `PORC_PARTICIP` decimal(8,3)
+, `P_INICIO` date
+, `P_DIAS` int(3)
+, `P_FIN` date
+, `R_INICIO` date
+, `R_DIAS` int(3)
+, `R_FIN` date
+, `TIPO` varchar(8)
+, `CNT_REF` int(5)
+, `CNT_DESC` varchar(21)
+) DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+
+fechas fromato 'yyyy-mm-dd'
+decimales sin ',' cuidado con los puntos de miles
+sin acentos ni ñ
+valores numericos vacios deben ir como NULL
+% deben ser multiplados por 100 y precentados como decimales
+
+
+
+
+
+
+
+CREATE TABLE IF NOT EXISTS `id15957446_db`.`LOTE` (`AREA` varchar(3), `Desc` varchar(15), `X` int(1), `Y` int(1), `W` int(2), `H` int(2), `ANG` int(3), `TIPO` varchar(8), `COLOR` varchar(6)) DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+
+
+CREATE TABLE IF NOT EXISTS `id15957446_db`.`EDIFICIO` (`AREA` varchar(3), `Desc` varchar(11), `TIPO` varchar(1), `PISOS` int(1), `DEPTOS` int(2), `MR` varchar(1), `INV` varchar(10), `ESCALERAS` int(1)) DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+
+
+CREATE TABLE IF NOT EXISTS `id15957446_db`.`PISO` (`EDIFICIO` varchar(3), `PISO` int(2), `DEPTOS` int(1), `GAS` varchar(10), `BASURA` varchar(1), `ESCALERA` int(1)) DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+
+
+CREATE TABLE IF NOT EXISTS `id15957446_db`.`DEPTO` (`EDIFICIO` varchar(3), `PISO` int(2), `DEPTO` int(2), `UBIC` varchar(10), `TIPO` varchar(4)) DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+

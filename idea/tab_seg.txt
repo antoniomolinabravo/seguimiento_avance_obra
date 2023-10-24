@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS `id15957446_db`.`TABLE 9` (`ELEMENTO_ID` varchar(10), `DSC` varchar(19), `TIPO` varchar(8), `CONTEXTO` varchar(10), `PORC_APL` decimal(2,1), `EDIFICIO` varchar(3), `NIVEL` varchar(2), `PISO` varchar(2), `DEPTO` varchar(3)) DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+
