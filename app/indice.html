@@ -1,0 +1,126 @@
+<html>
+<head>
+<style>
+.lnk {
+  cursor: pointer;
+  display:block;
+  background-color: #ccc;
+  color: #000;
+  text-decoration:none;
+  padding:10px;
+  margin-bottom:1px;
+}
+.lnk:hover {
+  background-color: #ddd;
+}
+</style>
+</head>
+<body>
+<div class='sep-mini'></div>
+<div class='grp' >CREADA GANTT</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='GRT'>TRUCAR RESUMEN GANTT</div>
+<div class='lnk' onclick='call(this)' ref='GRG'>GENERAR RESUMEN GANTT</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='GST'>TRUCAR SEGMENTOS</div>
+<div class='lnk' onclick='call(this)' ref='GSG'>GENERAR SEGMENTOS</div>
+<div class='sep-medio'></div>
+<div class='grp' >CREADOS ELEMENTOS</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='RT'>TRUCAR RELACION</div>
+<div class='lnk' onclick='call(this)' ref='RG'>GENERAR RELACION</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='ERT'>TRUCAR RESUMEN ELEM</div>
+<div class='lnk' onclick='call(this)' ref='ERG'>GENERAR RESUMEN ELEM</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='EST'>TRUCAR SEGMENTOS ELEM</div>
+<div class='lnk' onclick='call(this)' ref='ESG'>GENERAR SEGMENTOS ELEM</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='EU'>ACTUALIZAR COSTOS ELEM</div>
+<div class='sep-medio'></div>
+<div class='grp' >CREADOS REGISTROS</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='AT'>TRUCAR AVANCE</div>
+<div class='lnk' onclick='call(this)' ref='AG'>GENERAR AVANCE</div>
+<div class='lnk' onclick='call(this)' ref='AU'>ACTUALIZAR AVANCE</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='AGT'>TRUCAR SEGMENTOS AVC.GANTT</div>
+<div class='lnk' onclick='call(this)' ref='AGG'>GENERAR SEGMENTOS AVC.GANTT</div>
+<div class='sep-mini'></div>
+<div class='lnk' onclick='call(this)' ref='AET'>TRUCAR SEGMENTOS AVC.ELEM</div>
+<div class='lnk' onclick='call(this)' ref='ASG'>GENERAR SEGMENTOS AVC.ELEM</div>
+<div></div>
+</body>
+
+<script>
+/*
+$(function() {
+  $(".lnk").click( function() {
+   //  window.location.href='?fnc='.$(this).find("div").attr("ref");
+   alert('');
+//   window.location.href='?fnc=' . $(this).attr("ref");
+  });
+});
+*/
+</script>
+
+<script>
+function call(d) {
+  window.location.href='?fnc=' + d.attributes.ref.value;
+}
+</script>
+
+<?php
+        /* utilizar la variable que nos viene o establecerla nosotros */
+        $number_of_posts = isset($_GET['num']) ? intval($_GET['num']) : 10; //10 es por defecto
+        $fnc = !isset($_GET['fnc']) ? 'L' : strtoupper($_GET['fnc']);
+        $format = !isset($_GET['format']) ? 'html' : strtolower($_GET['format']);
+        //$format = strtolower($_GET['format']) == 'json' ? 'json' : 'xml'; //xml es por defecto
+        //$user_id = intval($_GET['user']); 
+
+		switch($fnc) {
+		case 'GRT' : $query = "TRUNCATE TABLE RES_GANTT ";
+		case 'GRG' : $query = "SELECT ";
+		case 'GST' : $query = "TRUNCATE TABLE GANTT_SEG ";
+		case 'GSG' : $query = "SELECT ";
+		case 'RT' : $query = "TRUNCATE TABLE RELACION ";
+		case 'RG' : $query = "SELECT ";
+		case 'ERT' : $query = "TRUNCATE TABLE RES_ELEM_COSTO ";
+		case 'ERG' : $query = "SELECT ";
+		case 'EST' : $query = "TRUNCATE TABLE ELEM_SEG ";
+		case 'ESG' : $query = "SELECT ";
+		case 'EU' : $query = "SELECT ";
+		case 'AT' : $query = "TRUNCATE TABLE AVANCE ";
+		case 'AG' : $query = "SELECT ";
+		case 'AU' : $query = "SELECT ";
+		case 'AGT' : $query = "TRUNCATE TABLE AVANCE_GANTT_SEG ";
+		case 'AGG' : $query = "SELECT ";
+		case 'AET' : $query = "TRUNCATE TABLE AVANCE_ELEM_SEG ";
+		case 'ASG' : $query = "SELECT ";
+		else : $query="";
+		}
+
+		if($query!="") {
+			/* conectamos a la bd */
+			$link = mysqli_connect('localhost','id15957446_dbuser','Clavedb2021!', 'id15957446_db') or die('No se puede conectar a la BD');
+
+			/* sacamos los posts de bd */
+			//$query = "SELECT ";
+			$result = mysqli_query($link, $query) or die('Query no funcional:  '.$query);
+
+			/* creamos el array con los datos */
+			$posts = array();
+			if(mysqli_num_rows($result)) {
+			$i=0;
+					while($post = mysqli_fetch_assoc($result)) {
+							// $posts[] = array('post'=>$post);
+							$posts[$i++] = $post;
+					}
+			}
+
+			/* nos desconectamos de la bd */
+			@mysqli_close($link);
+		}
+
+?>
+</html>
